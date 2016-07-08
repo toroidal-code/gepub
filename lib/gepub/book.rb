@@ -342,6 +342,46 @@ EOF
     end
 
     def ncx_xml
+      # handle cascaded toc
+      start_level = @toc && !@toc.empty? && @toc[0][:level] || 1
+      stacked_toc = {level: start_level, tocs: [] }
+      @toc.inject(stacked_toc) do |current_stack, toc_entry|
+        toc_entry_level = toc_entry[:level] || 1
+        if current_stack[:level] < toc_entry_level
+          new_stack = { level: toc_entry_level, tocs: [], parent: current_stack}
+          current_stack[:tocs].last[:child_stack] = new_stack
+          current_stack = new_stack
+        else
+          while current_stack[:level] > toc_entry_level and
+              !current_stack[:parent].nil?
+            current_stack = current_stack[:parent]
+          end
+        end
+        current_stack[:tocs].push toc_entry
+        current_stack
+      end
+      @count = 0
+      # write toc
+      def write_toc xml_doc, tocs
+        tocs.each {
+          |x|
+          xml_doc.navPoint('id' => "#{x[:item].itemid}_#{x[:id]}", 'playOrder' => "#{@count += 1}") {
+            xml_doc.navLabel {
+              xml_doc.text_  "#{x[:text]}"
+            }
+            if x[:id].nil?
+              xml_doc.content('src' => "#{x[:item].href}")
+            else
+              xml_doc.content('src' => "#{x[:item].href}##{x[:id]}")
+            end
+            if x[:child_stack] && x[:child_stack][:tocs].size > 0
+              write_toc(xml_doc, x[:child_stack][:tocs])
+            end
+          }
+        }
+      end
+
+      # build ncx
       builder = Nokogiri::XML::Builder.new {
         |xml|
         xml.ncx('xmlns' => 'http://www.daisy.org/z3986/2005/ncx/', 'version' => '2005-1') {
@@ -354,25 +394,12 @@ EOF
           xml.docTitle {
             xml.text_ "#{@package.metadata.title}"
           }
-          count = 1
           xml.navMap {
-            @toc.each {
-              |x|
-              xml.navPoint('id' => "#{x[:item].itemid}_#{x[:id]}", 'playOrder' => "#{count}") {
-                xml.navLabel {
-                  xml.text_  "#{x[:text]}"
-                }
-                if x[:id].nil?
-                  xml.content('src' => "#{x[:item].href}")
-                else
-                  xml.content('src' => "#{x[:item].href}##{x[:id]}")
-                end
-              }
-              count += 1
-            }
+            write_toc(xml, stacked_toc[:tocs])
           }
         }
       }
+      self.remove_instance_variable :@count
       builder.to_xml(:encoding => 'utf-8')
     end
     

@@ -83,6 +83,12 @@ module GEPUB
       self
     end
 
+    # set toc text with level to the item
+    def toc_text_with_level text, level
+      toc.push(:item => self, :text => text, :id => nil, :level => level)
+      self
+    end
+
     # set bindings: item is a handler for media_type
     def is_handler_of media_type
       bindings.add(self.id, media_type)
